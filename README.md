@@ -29,17 +29,17 @@ Period 3 is the gate doing its job: retraining on stable data gave a model that 
 ```mermaid
 flowchart LR
     subgraph Pipeline["Prefect flows"]
-        I[ingest] --> V[validate<br/>pandera] --> T[train<br/>LambdaRank] --> G{gate<br/>NDCG@10}
+        I["ingest"] --> V["validate (pandera)"] --> T["train (LambdaRank)"] --> G{"gate: NDCG@10"}
     end
-    T -- "log run, register version<br/>alias: challenger" --> R[(MLflow<br/>tracking + registry)]
-    G -- "win → alias: champion" --> R
-    R -- "champion + challenger" --> A[FastAPI /rank]
-    A -- "ranks with champion,<br/>scores challenger in shadow" --> U[Hirer frontend]
-    A -- "feature vectors" --> L[(request log)]
-    A -- "/metrics" --> P[Prometheus → Grafana]
-    L --> M[monitor<br/>Evidently drift]
-    M -- "drift or schedule" --> I
-    G -- "POST /reload" --> A
+    T -->|"log run, register version, alias challenger"| R[("MLflow tracking + registry")]
+    G -->|"win: alias champion"| R
+    R -->|"champion + challenger"| A["FastAPI /rank"]
+    A -->|"ranks with champion, challenger in shadow"| U["Hirer frontend"]
+    A -->|"feature vectors"| L[("request log")]
+    A -->|"/metrics"| P["Prometheus + Grafana"]
+    L --> M["monitor (Evidently drift)"]
+    M -->|"drift or schedule"| I
+    G -->|"POST /reload"| A
 ```
 
 | Stage | Tool | Why |
