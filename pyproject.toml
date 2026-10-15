@@ -1,0 +1,21 @@
+[project]
+name = "hirer-rankops"
+version = "1.0.0"
+description = "Continuous-retraining candidate ranker: LambdaRank + MLflow registry + drift-triggered retraining"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+packages = ["rankops", "flows"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning", "ignore::UserWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501"]

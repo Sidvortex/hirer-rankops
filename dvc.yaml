@@ -1,0 +1,38 @@
+# Reproducible build of the current model: `dvc repro`.
+# Change params.yaml (e.g. pipeline.current_period or train.lgbm.*) and only the
+# affected stages rerun. `dvc dag` shows the graph.
+stages:
+  ingest:
+    cmd: python -m rankops.data ${pipeline.current_period}
+    deps:
+      - rankops/data.py
+    params:
+      - data
+      - pipeline.current_period
+    outs:
+      - data/raw/period_${pipeline.current_period}:
+          persist: true
+
+  train:
+    cmd: python -m rankops.train --period ${pipeline.current_period}
+    deps:
+      - rankops/train.py
+      - rankops/features.py
+      - rankops/validate.py
+      - data/raw
+    params:
+      - train
+    outs:
+      - data/features/holdout_p${pipeline.current_period}.parquet:
+          cache: false
+
+  promote:
+    cmd: python -m rankops.promote --period ${pipeline.current_period}
+    deps:
+      - rankops/promote.py
+      - data/features/holdout_p${pipeline.current_period}.parquet
+    params:
+      - promotion
+    metrics:
+      - reports/promotion_p${pipeline.current_period}.json:
+          cache: false

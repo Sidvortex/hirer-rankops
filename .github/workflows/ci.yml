@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "30 20 * * 0"   # weekly, Monday 02:00 IST: full drift simulation as a regression check
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest ruff
+      - run: ruff check rankops flows scripts tests
+      - run: pytest
+
+  # The whole loop must still recover from the simulated market shift.
+  simulate:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      PREFECT_LOGGING_LEVEL: WARNING
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/simulate.py --fresh
+      - name: Assert recovery after drift
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          df = pd.read_csv("reports/timeline.csv")
+          last = df.iloc[-1]
+          assert df.promoted.sum() >= 2, "expected drift-triggered promotions"
+          assert last.live_ndcg_at_10 > last.frozen_ndcg_at_10 + 0.1, "retraining should beat a frozen model"
+          print(df[["period", "live_ndcg_at_10", "frozen_ndcg_at_10", "promoted"]].to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drift-reports
+          path: reports/
+
+  image:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/hirer-rankops:latest,ghcr.io/${{ github.repository_owner }}/hirer-rankops:${{ github.sha }}

@@ -1,0 +1,40 @@
+# Single source of truth for pipeline settings. DVC tracks this file,
+# so changing a value here invalidates the stages that depend on it.
+
+data:
+  jobs_per_period: 160
+  candidates_per_job: 30
+  drift_start_period: 4      # market shift begins here (simulation only)
+  drift_strength: 1.0        # 0 = no shift, 1 = full shift
+
+train:
+  window_periods: 3          # train on the most recent N periods
+  holdout_job_frac: 0.25     # newest period: this share of jobs is held out for evaluation
+  seed: 42
+  lgbm:
+    objective: lambdarank
+    n_estimators: 300
+    learning_rate: 0.05
+    num_leaves: 31
+    min_child_samples: 20
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    label_gain: [0, 1, 3, 7, 15]
+
+promotion:
+  primary_metric: ndcg_at_10
+  min_improvement: 0.005     # challenger must beat champion by at least this much
+  guardrail_metric: ndcg_at_5
+  max_guardrail_drop: 0.01   # and must not lose more than this on the guardrail
+
+monitoring:
+  drift_share_threshold: 0.3 # retrain if >= 30% of features drift
+  min_requests: 200          # don't judge drift on too few logged candidates
+  scheduled_retrain_every: 3 # also retrain on a fixed cadence, drift or not
+
+registry:
+  model_name: hirer-ranker
+
+pipeline:
+  current_period: 2          # newest labelled period; bump it as new data lands, then `dvc repro`

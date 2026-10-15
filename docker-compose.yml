@@ -1,0 +1,78 @@
+# docker compose up -d                    -> MLflow, ranking API, Prometheus, Grafana
+# docker compose --profile jobs up -d     -> also the scheduled Prefect monitor/retrain worker
+# docker compose run --rm bootstrap       -> generate data and train + promote the first model
+
+x-app: &app
+  build: .
+  image: hirer-rankops:latest
+  environment:
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    RANKOPS_SERVING_URL: http://api:8000
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+    - ./reports:/app/reports
+
+services:
+  mlflow:
+    image: hirer-rankops:latest
+    build: .
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+      --allowed-hosts "*"
+    environment:
+      MLFLOW_DISABLE_TELEMETRY: "true"
+    volumes:
+      - mlflow:/mlflow
+    ports: ["5000:5000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:5000/health"]
+      interval: 10s
+      retries: 12
+
+  api:
+    <<: *app
+    depends_on:
+      mlflow: { condition: service_healthy }
+    ports: ["8000:8000"]
+    restart: unless-stopped
+
+  bootstrap:
+    <<: *app
+    profiles: ["jobs"]
+    depends_on:
+      mlflow: { condition: service_healthy }
+    command: >
+      sh -c "python -m rankops.data 0 1 2 && python flows/pipeline.py retrain --period 2"
+
+  pipeline:
+    <<: *app
+    profiles: ["jobs"]
+    depends_on:
+      mlflow: { condition: service_healthy }
+      api: { condition: service_started }
+    command: ["python", "flows/pipeline.py", "serve"]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+
+volumes:
+  mlflow:
